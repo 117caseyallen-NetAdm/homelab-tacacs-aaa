@@ -1,0 +1,6 @@
+# Configs and scripts run on Linux and network devices: keep LF line endings
+# regardless of the platform they are checked out on. A shell script with CRLF
+# fails on Linux with "bad interpreter: /bin/bash^M".
+* text=auto eol=lf
+*.jpg binary
+*.png binary

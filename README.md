@@ -58,7 +58,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- |
 | 3560CG-1, 3560CG-2 | Cisco IOS 15.x | `shell` | `priv-lvl` | the server, per command | ✅ |
 | C2940 | Cisco IOS 12.1(22)EA13 | `shell` | `priv-lvl` | the server, per command | ✅ |
-| Arista 710P | EOS | `shell` | `priv-lvl` | the server, per command | ✅ |
+| Arista 710P | EOS 4.30.4M | `shell` | `priv-lvl` | the server, per command | ✅ |
 | SRX345 | Junos 20.2R3 | `junos-exec` | `local-user-name` → local login class | the class's permission bits | ✅ via accounting |
 | PA-440 | PAN-OS 10.2.7 | `PaloAlto` + `protocol=firewall` | `PaloAlto-Admin-Role` → local admin role | the role **removes commands from the parser** | ❌ config changes and logins only, via syslog |
 

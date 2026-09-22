@@ -152,9 +152,12 @@ failure: it would have been discovered during a restore.
 The git log still looked fine, just stale. The `panos` model runs
 `show config running`, which includes PAN-OS's entire predefined App-ID
 catalogue, about 70,000 lines. The job takes 39–50 seconds against a global
-`timeout:` of 30. It was failing by nine seconds, most likely after a content
-update grew the dump. Two retry attempts 40 seconds apart had been read as two
-successful backups.
+`timeout:` of 30, so it was failing by nine seconds or more. Six earlier commits
+show it had worked at some point. What pushed a borderline job over the line
+isn't established. It wasn't a content update, since this PA-440 has no
+support licence and can't download them. The login path had changed, though:
+the account is now authenticated by TACACS+ over PAP, with an LDAP bind behind
+it. Two retry attempts 40 seconds apart had been read as two successful backups.
 
 **The PA-440's backups carried its chassis serial.** The upstream model strips
 eight version fields from `show system info` and leaves `serial:`. Fixed with a

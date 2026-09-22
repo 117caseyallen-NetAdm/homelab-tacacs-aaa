@@ -57,8 +57,9 @@ seconds. The global `timeout:` was 30. The backup failed with
 `Timeout::Error: execution expired`, retried, gave up, and reported nothing:
 the git history still looked healthy, just stale.
 
-It was failing by nine seconds, most likely after a content update grew the
-dump. `timeout: 600` fixed it as a stopgap; the proper fix is a scoped
+It was failing by nine seconds or more. Earlier backups had succeeded, and what
+tipped it over isn't established. It wasn't a content update: this PA-440 is
+unlicensed and can't download them. `timeout: 600` fixed it as a stopgap; the proper fix is a scoped
 collection command that backs up the local config instead of the vendor's
 application catalogue.
 
