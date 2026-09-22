@@ -1,0 +1,46 @@
+# Palo Alto PA-440 — PAN-OS 10.2.7
+# The AAA-relevant configuration in set form, reconstructed from the committed
+# configuration. Check paths against your PAN-OS version before pasting.
+
+# --- Server profile ---------------------------------------------------------------
+# PAP, not CHAP. CHAP makes the server compute a response from the cleartext
+# password, and this server never has it: it authenticates by binding to LDAP as
+# the user. CHAP fails as "no such user"; PAP works.
+set shared server-profile tacplus TAC-LAB server CA-TAC-LAB address 10.99.20.32
+set shared server-profile tacplus TAC-LAB server CA-TAC-LAB secret <PER_DEVICE_KEY>
+set shared server-profile tacplus TAC-LAB server CA-TAC-LAB port 49
+set shared server-profile tacplus TAC-LAB timeout 5
+set shared server-profile tacplus TAC-LAB protocol PAP
+
+# --- Admin role returned by the server ----------------------------------------------
+# The server sends PaloAlto-Admin-Role = netops. The role is defined here, on the
+# firewall. "superreader" doesn't refuse write commands at run time — it removes
+# them from the parser, so "set" and "delete" report "Unknown command".
+set shared admin-role netops role device cli superreader
+
+# --- Authentication profile ---------------------------------------------------------
+set shared authentication-profile TACACS-AUTH method tacplus server-profile TAC-LAB
+set shared authentication-profile TACACS-AUTH allow-list all
+set deviceconfig system authentication-profile TACACS-AUTH
+
+# Unlike the other five devices, PAN-OS has no method list and no fallback order.
+# A locally-defined admin authenticates locally; accounts without a local
+# definition go to TACACS+. So the local break-glass admin is reachable over SSH
+# whether the server is up, down, or rejecting it — by design, not by accident.
+
+# --- Logs to the collector ----------------------------------------------------------
+# PAN-OS sends no TACACS+ accounting. Config changes and logins go via syslog.
+# There is no equivalent of Junos interactive-commands: operational commands
+# are not logged anywhere central.
+set shared log-settings syslog TAC-SYSLOG server CA-TAC-LAB server 10.99.20.32
+set shared log-settings syslog TAC-SYSLOG server CA-TAC-LAB transport UDP
+set shared log-settings syslog TAC-SYSLOG server CA-TAC-LAB port 514
+set shared log-settings syslog TAC-SYSLOG server CA-TAC-LAB format BSD
+set shared log-settings syslog TAC-SYSLOG server CA-TAC-LAB facility LOG_USER
+set shared log-settings config match-list CONFIG-TO-SYSLOG send-syslog TAC-SYSLOG
+set shared log-settings config match-list CONFIG-TO-SYSLOG filter "All Logs"
+set shared log-settings system match-list SYSTEM-TO-SYSLOG send-syslog TAC-SYSLOG
+set shared log-settings system match-list SYSTEM-TO-SYSLOG filter "All Logs"
+
+# Every PAN-OS syslog line carries the chassis serial in field 3. Strip it
+# before publishing any captured line.

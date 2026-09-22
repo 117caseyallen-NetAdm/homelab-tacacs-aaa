@@ -1,0 +1,50 @@
+# Juniper SRX345 — Junos 20.2R3
+# The AAA-relevant statements, in set form. Secrets are placeholders.
+
+# --- Authentication ---------------------------------------------------------------
+# "tacplus" alone, no "password". With "password" in the list, Junos tried the
+# local database after the server REJECTED a user — so a local account the
+# server had refused could still log in over SSH.
+#
+# Removing it does not lock you out: when only remote methods are listed and no
+# server responds, Junos falls back to the local database anyway, and says so at
+# the prompt ("Local password:"). Verified in both states.
+set system authentication-order tacplus
+
+set system tacplus-server 10.99.20.32 secret "<PER_DEVICE_KEY>"
+set system tacplus-server 10.99.20.32 single-connection
+set system tacplus-server 10.99.20.32 source-address 10.99.0.2
+
+# --- Accounting -------------------------------------------------------------------
+# Configured separately from the server above, with its own secret and its own
+# source address. Junos says nothing when the two disagree.
+#
+# Without this source-address, accounting left via the IPsec tunnel interface,
+# the server refused the unknown address, and the SRX produced zero accounting
+# records — while authentication worked perfectly.
+set system accounting events [ login change-log interactive-commands ]
+set system accounting destination tacplus server 10.99.20.32 secret "<PER_DEVICE_KEY>"
+set system accounting destination tacplus server 10.99.20.32 source-address 10.99.0.2
+
+# --- Authorization: template users -> login classes -------------------------------
+# The server returns local-user-name; Junos applies that local user's class.
+#
+# netops-ro exists because the stock read-only class has "view" but not
+# "view-configuration": the backup through it was 33 lines of empty hierarchy
+# headers — and Oxidized reported it as a success, committed it and pushed it.
+# With view-configuration it is 654 lines.
+#
+# It deliberately lacks the "secret" permission bit, so the backup account sees
+# "## SECRET-DATA" instead of encrypted values — a permission bit, which fails
+# closed, rather than a redaction regex, which fails open.
+set system login class netops-ro permissions [ view view-configuration ]
+set system login user netadmin uid 9001 class super-user
+set system login user netops uid 9002 class netops-ro
+
+# Break-glass
+set system login user <BREAKGLASS_USER> class super-user authentication encrypted-password "<SHA512_CRYPT_HASH>"
+
+# --- Command audit via syslog -----------------------------------------------------
+set system syslog host 10.99.20.32 interactive-commands any
+set system syslog host 10.99.20.32 change-log any
+set system syslog host 10.99.20.32 authorization any

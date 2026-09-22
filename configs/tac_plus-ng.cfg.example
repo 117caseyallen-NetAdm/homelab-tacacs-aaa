@@ -1,0 +1,178 @@
+# /etc/tac_plus-ng/tac_plus-ng.cfg — sanitized.
+#
+# Keys, passwords and hashes are <PLACEHOLDERS>. Directives and values are as
+# deployed; some blocks are reformatted onto multiple lines for reading.
+# Parse before trusting a change:   tac_plus-ng -P /etc/tac_plus-ng/tac_plus-ng.cfg
+#
+# Quote every literal. An unquoted "!" in a password ends the parse.
+
+id = spawnd {
+    listen { port = 49 }
+    spawn { instances min = 1  instances max = 8 }
+    # Must agree with "-f" in the systemd unit and its implicit Type=simple.
+    # Change one without the others and the daemon starts, then vanishes.
+    background = no
+}
+
+id = tac_plus-ng {
+
+    # --- Log sanitizing -------------------------------------------------------
+    # Per-command accounting is a transcript, and a transcript of config work
+    # contains credentials. Defined here at realm level, applied per log below.
+    #
+    # \S+ rather than the manual's \w+: every Cisco hash begins with "$", which
+    # \w+ cannot match, so the manual's example redacts plaintext and misses
+    # every hash. This is still a denylist and fails open — read before publishing.
+    rewrite sanitize {
+        rewrite /(key|secret|password) (\d) (\S+)/ "$1 $2 ***"
+        rewrite /(key|secret|password) (\S+)/ "$1 ***"
+    }
+
+    log accesslog { destination = /var/log/tac_plus-ng/access.log }
+    log authorlog { destination = /var/log/tac_plus-ng/authorization.log  rewrite = sanitize }
+    log acctlog   { destination = /var/log/tac_plus-ng/accounting.log  rewrite = sanitize }
+
+    # A second destination is a second named log, assigned a second time.
+    # A second "destination =" inside ONE block silently replaces the first —
+    # that stopped file accounting for every device, with a clean parse.
+    log acctsyslog {
+        destination = syslog
+        syslog facility = LOCAL6
+        syslog level = INFO
+        syslog ident = tac_plus-ng          # rsyslog routes on this
+        rewrite = sanitize
+    }
+
+    access log        = accesslog
+    authorization log = authorlog
+    accounting log    = acctlog
+    accounting log    = acctsyslog
+    syslog default = deny                   # keep daemon chatter out of the pipeline
+
+    # --- Active Directory via MAVIS -----------------------------------------------
+    # MAVIS authenticates by binding to LDAP *as the user*, so this server never
+    # holds a user's password. That is also why CHAP cannot work here.
+    mavis module = external {
+        setenv LDAP_HOSTS             = "ldap://10.20.2.5:389"     # LDAPS needs an internal CA
+        setenv LDAP_BASE              = "dc=casey,dc=corp"
+        setenv LDAP_FILTER            = "(&(objectclass=user)(sAMAccountName=%s))"
+        setenv LDAP_USER              = "svc-tacacs@casey.corp"
+        setenv LDAP_PASSWD            = "<LDAP_BIND_PASSWORD>"
+        setenv LDAP_CONNECT_TIMEOUT   = "5"
+        setenv LDAP_SKIP_POSIXGROUP   = "1"
+        setenv LDAP_SKIP_GROUPOFNAMES = "1"
+        exec = /usr/local/lib/mavis/mavis_tacplus-ng_ldap.pl
+    }
+
+    login backend = mavis
+    pap backend   = mavis      # NOT implied by the line above; PAN-OS uses PAP
+    user backend  = mavis
+
+    # --- Devices ------------------------------------------------------------------
+    # One key per device: a leaked key compromises one trust relationship, not six.
+    device 3560cg-2  { address = 10.99.20.1/32   key = "<KEY_3560CG_2>" }
+    device 3560cg-1  { address = 10.99.10.1/32   key = "<KEY_3560CG_1>" }
+    device c2940     { address = 10.99.20.20/32  key = "<KEY_C2940>" }
+    device arista    { address = 10.99.10.14/32  key = "<KEY_ARISTA>" }
+    device srx345    { address = 10.99.0.2/32    key = "<KEY_SRX345>" }
+    # Loopback plus MGT port: cabling MGT changed the source address the PA uses.
+    device pa440     { address = 10.99.0.1/32  address = 10.99.20.2/32  key = "<KEY_PA440>" }
+    # For scripts/tac-validate.sh — test the ruleset with no network device involved.
+    device localhost { address = 127.0.0.1/32    key = "<KEY_LOCALHOST>" }
+
+    # --- Profiles -------------------------------------------------------------------
+    # Each vendor asks for a different service. Attributes are scoped to the
+    # service that asked, because optional ("add") attributes proved unreliable
+    # in both directions:
+    #   - IOS, sent an optional attribute it didn't recognise, discarded the
+    #     WHOLE reply — priv-lvl included, so privilege silently dropped to 1.
+    #   - PAN-OS, sent its admin role as optional, ignored it — "Invalid user".
+    # "set" = mandatory, "add" = optional. Once scoped, "set" is safe.
+    profile full {
+        script {
+            if (service == shell) {                              # IOS, EOS
+                if (cmd == "") { set priv-lvl = 15  permit }     # session start
+                permit                                           # every command
+            }
+            if (service == "junos-exec") { add local-user-name = netadmin  permit }
+            if (service == "PaloAlto") { set PaloAlto-Admin-Role = superuser  permit }
+            deny
+        }
+    }
+
+    profile readonly {
+        script {
+            if (service == shell) {
+                # Read-only still lands at 15: per-command authorization does the
+                # restricting, and "show running-config" requires 15.
+                if (cmd == "") { set priv-lvl = 15  permit }
+                if (cmd =~ /^show/)      permit
+                if (cmd =~ /^terminal /) permit
+                if (cmd =~ /^set cli /)  permit
+                if (cmd =~ /^exit$/)     permit
+                deny
+            }
+            # Junos template user -> custom login class without the "secret" bit
+            if (service == "junos-exec") { add local-user-name = netops  permit }
+            # PAN-OS admin role "netops" = CLI superreader
+            if (service == "PaloAlto") { set PaloAlto-Admin-Role = netops  permit }
+            deny
+        }
+    }
+
+    group NetAdmins { }
+    group NetOps    { }
+
+    # --- Local users ----------------------------------------------------------------
+    # Test users for scripts/tac-validate.sh. "password login" (ASCII) and
+    # "password pap" are separate credentials on the same user: a local user with
+    # only a login password cannot authenticate over PAP at all.
+    user testadmin {
+        password login = clear "<TEST_PASSWORD>"
+        password pap = clear "<TEST_PASSWORD>"
+        member = NetAdmins
+    }
+
+    user testnogroup {
+        password login = clear "<TEST_PASSWORD>"
+        password pap = clear "<TEST_PASSWORD>"
+    }
+
+    user testro {
+        password login = clear "<TEST_PASSWORD>"
+        password pap = clear "<TEST_PASSWORD>"
+        member = NetOps
+    }
+
+    # Oxidized's account. Also exists in AD, in NetOps.
+    user svc-oxidized {
+        password login = crypt <SHA512_CRYPT_HASH>
+        member = NetOps
+    }
+
+    # --- Ruleset --------------------------------------------------------------------
+    # AD users match on the memberOf DN; local users on local group membership.
+    # Both identity sources coexist.
+    ruleset {
+        rule r-netadmins {
+            enabled = yes
+            script {
+                if (memberof =~ /^CN=NetAdmins,/) { profile = full permit }
+                if (member == NetAdmins) { profile = full permit }
+            }
+        }
+        rule r-netops {
+            enabled = yes
+            script {
+                if (memberof =~ /^CN=NetOps,/) { profile = readonly permit }
+                if (member == NetOps) { profile = readonly permit }
+            }
+        }
+        # Authenticated but in neither group: refused. Note tacacs_client reports
+        # this identically to a wrong password — check access.log for "denied by ACL".
+        rule r-deny {
+            enabled = yes
+            script { deny }
+        }
+    }
+}

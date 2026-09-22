@@ -1,0 +1,28 @@
+# /etc/systemd/system/tac_plus-ng.service
+#
+# The project ships its own unit (extra/tac_plus-ng.service in the source tree);
+# this is that unit with the config path moved to /etc/tac_plus-ng/.
+#
+# No Type= line: systemd defaults to Type=simple, which expects the process to
+# stay in the foreground — which is what -f does, and what "background = no" in
+# the spawnd block agrees with. A hand-written Type=forking + "background = yes"
+# looks equally plausible and produces a daemon that starts and then vanishes.
+
+[Unit]
+Description=tac_plus-ng TACACS+ daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/sbin/tac_plus-ng -f /etc/tac_plus-ng/tac_plus-ng.cfg
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+# Reload vs restart: spawnd forks workers that each hold their own copy of the
+# config. A HUP reaches new workers; an established one can keep serving the
+# old ruleset. For a change to an existing user object, restart.

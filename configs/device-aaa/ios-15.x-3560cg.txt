@@ -1,0 +1,53 @@
+! Cisco Catalyst 3560CG — IOS 15.x
+! Taken from the Oxidized backup of 3560CG-2, which had already redacted the key.
+! 3560CG-1 is identical apart from its key and source address.
+!
+aaa new-model
+!
+aaa group server tacacs+ TAC-GROUP
+ server name TAC-LAB
+ ! Pin the source address to the management SVI, so it always matches the
+ ! device's "address =" in tac_plus-ng.cfg whichever way the packet routes.
+ ip tacacs source-interface Vlan99
+!
+! "local" at the end of a list is consulted only when the server is
+! UNREACHABLE (error). A server that answers "no" (fail) is final — so a local
+! account TACACS+ has never heard of cannot log in over SSH while the server is
+! healthy. The console gets its own list for exactly that reason.
+aaa authentication login default group TAC-GROUP local
+aaa authentication login CONSOLE local
+aaa authentication enable default group TAC-GROUP enable
+!
+! Modern IOS exempts the console from authorization unless told otherwise, and
+! warns the line-level "authorization exec CONSOLE" is useless without this.
+aaa authorization console
+!
+! if-authenticated: during a server outage, an already-authenticated TACACS+
+! user keeps working. Without it the session stays open and every command fails.
+aaa authorization exec default group TAC-GROUP local if-authenticated
+aaa authorization exec CONSOLE local if-authenticated
+aaa authorization commands 15 default group TAC-GROUP local if-authenticated
+!
+aaa accounting exec default start-stop group TAC-GROUP
+aaa accounting commands 15 default start-stop group TAC-GROUP
+aaa session-id common
+!
+tacacs server TAC-LAB
+ address ipv4 10.99.20.32
+ key <PER_DEVICE_KEY>
+ timeout 5
+!
+! Break-glass. Type 9 (scrypt) — replaced a type 5 ($1$ MD5) secret.
+username <BREAKGLASS_USER> privilege 15 algorithm-type scrypt secret <BREAKGLASS_PASSWORD>
+!
+line con 0
+ ! The console exec authorization is what reads "privilege 15" off the local
+ ! user. Without it the console logs you in at privilege 1.
+ authorization exec CONSOLE
+ login authentication CONSOLE
+line vty 0 4
+ access-class MGMT-SSH-IN in
+ transport input ssh
+line vty 5 15
+ access-class MGMT-SSH-IN in
+ transport input ssh

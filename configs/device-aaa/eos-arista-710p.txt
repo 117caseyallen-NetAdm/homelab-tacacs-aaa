@@ -1,0 +1,31 @@
+! Arista 710P — EOS
+! From "show running-config | section aaa", plus the server line as EOS writes it.
+!
+no aaa root
+!
+! The key sits on the host line, not in a global "tacacs-server key" — which is
+! exactly the form Oxidized's eos model failed to redact.
+tacacs-server host 10.99.20.32 timeout 5 key 7 <PER_DEVICE_KEY>
+!
+aaa group server tacacs+ TAC-GROUP
+   server 10.99.20.32
+!
+aaa authentication login default group TAC-GROUP local
+aaa authentication login console local
+aaa authentication enable default group TAC-GROUP local
+!
+! EOS offers three authorization methods — group, local, none — and no
+! if-authenticated. "none" is not a substitute: it means "always succeeds", in
+! every state, not only during an outage. So during a TACACS+ outage an open
+! session here goes inert while the Cisco boxes keep working. Documented, not
+! papered over.
+aaa authorization exec default group TAC-GROUP local
+aaa authorization commands all default group TAC-GROUP local
+!
+aaa accounting exec default start-stop group TAC-GROUP
+aaa accounting commands all default start-stop group TAC-GROUP
+!
+! Note the enable fallback differs from IOS: EOS falls back to "local" (the
+! user's own password), IOS to "enable" (the device's enable secret).
+!
+! Break-glass: one local privilege-15 user (not reproduced here).

@@ -1,0 +1,42 @@
+! Cisco Catalyst 2940 — IOS 12.1(22)EA13, released 2003
+!
+! Nothing was configured until the parser had answered three questions, because
+! "aaa new-model" takes effect the instant it is typed — there is no candidate
+! config on IOS:
+!
+!   aaa authorization ?          -> "commands" present: real per-command authz
+!   aaa group server ?           -> "tacacs+" present: named groups exist
+!   tacacs-server host <ip> ?    -> "key" accepted: per-device keys hold on all six
+!
+! Legacy syntax (tacacs-server host, not the 15.x "tacacs server" block), same
+! result. The one difference that matters is below the aaa lines.
+!
+aaa new-model
+!
+tacacs-server host 10.99.20.32 key <PER_DEVICE_KEY>
+tacacs-server timeout 5
+!
+aaa group server tacacs+ TAC-GROUP
+ server 10.99.20.32
+!
+aaa authentication login default group TAC-GROUP local
+aaa authentication login CONSOLE local
+aaa authorization exec default group TAC-GROUP local if-authenticated
+aaa authorization commands 15 default group TAC-GROUP local if-authenticated
+aaa accounting exec default start-stop group TAC-GROUP
+aaa accounting commands 15 default start-stop group TAC-GROUP
+!
+! This switch stored the TACACS+ key unencrypted — and the read-only account,
+! which must be allowed "show running-config", could read it. Type 7 is
+! reversible, so this is not protection; it puts the key in the form the backup
+! tool's redaction regexes expect, instead of relying on them to catch a bare one.
+service password-encryption
+!
+username <BREAKGLASS_USER> privilege 15 secret <BREAKGLASS_PASSWORD>
+!
+! "aaa authorization ?" on 12.1 has no "console" option: the console is exempt
+! from authorization, unconditionally. That also means nothing reads the local
+! user's privilege level, so the console lands at privilege 1 and needs
+! "enable". Verified working with the server up and rejecting.
+line con 0
+ login authentication CONSOLE
