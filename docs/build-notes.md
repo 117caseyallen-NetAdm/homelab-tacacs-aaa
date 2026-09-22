@@ -139,7 +139,7 @@ syslog  ACCT-STOP|10.99.0.2|casey|ttyp0|10.10.1.10|stop|shell|exit <cr>
 ```
 
 That's the SRX, whose accounting had never worked before this phase
-([findings.md §4](findings.md#4-four-things-were-configured-correctly-and-didnt-work)).
+([findings.md §4](findings.md#4-five-things-were-configured-correctly-and-didnt-work)).
 
 ## 12 — Before publishing anything
 
