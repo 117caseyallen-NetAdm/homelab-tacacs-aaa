@@ -337,3 +337,56 @@ Two server-side traps from the same work:
   for twenty minutes after a `systemctl reload`, and worked on the first attempt
   after a `restart`. The likely reason is that `spawnd` workers each hold their
   own copy of the config. Either way: for changes to existing users, restart.
+
+## 11. A `$` anchor in a command pattern is defeated by IOS's `<cr>`
+
+IOS appends `<cr>` as the final argument of every command authorization
+request. `tac_plus-ng` includes it in the string a `cmd =~` pattern is matched
+against. So this pattern, which looks obviously correct:
+
+```text
+if (cmd =~ /^(no )?ip http (secure-)?server$/) permit
+```
+
+never matches a real device, because the string arriving is
+`no ip http server <cr>`. The command is refused.
+
+**It fails closed.** A broken allowlist entry denies something legitimate
+rather than permitting something dangerous, which is the right direction — and
+also the reason nobody notices. There is no error, no warning, and the config
+parses.
+
+Found by a test written to *expect* the problem, before any device used the
+profile:
+
+```text
+OK    testdeploy may disable http              PASS
+FAIL  ...disable http, with <cr>               want PASS got FAIL
+```
+
+Twenty-seven other checks passed. Without the pair, the allowlist would have
+looked proven.
+
+**The fix** is to make the terminator optional rather than to drop the anchor —
+dropping it would turn `^configure( terminal)?$` into a pattern that also
+permits `configure replace`:
+
+```text
+if (cmd =~ /^(no )?ip http (secure-)?server( ?<cr>)?$/) permit
+```
+
+The same defect was already present in this repository's `readonly` profile, in
+`if (cmd =~ /^exit$/)`. The authorization log showed **no `exit` requests at
+all** — the backup tool closes the TCP session instead of typing `exit`, and
+human sessions are closed client-side — so it had never been exercised. In a
+deny-by-default ruleset a broken pattern stays invisible until something
+depends on it.
+
+Two general points, both of which this lab has now hit twice:
+
+- **Anchored patterns need to know exactly what the device sends**, including
+  terminators. Read a real authorization request before trusting a `$`.
+- **Prefix patterns (`/^show/`) are immune and commonly used for that reason**,
+  but they are also looser. If a pattern needs to be exact, test it against the
+  device's actual argument list rather than against what the command looks like
+  when typed.

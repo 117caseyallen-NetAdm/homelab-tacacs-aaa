@@ -109,7 +109,7 @@ id = tac_plus-ng {
                 if (cmd =~ /^show/)      permit
                 if (cmd =~ /^terminal /) permit
                 if (cmd =~ /^set cli /)  permit
-                if (cmd =~ /^exit$/)     permit
+                if (cmd =~ /^exit( ?<cr>)?$/)     permit   # ( ?<cr>) — see findings.md #11
                 deny
             }
             # Junos template user -> custom login class without the "secret" bit
