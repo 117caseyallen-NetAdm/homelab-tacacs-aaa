@@ -390,3 +390,64 @@ Two general points, both of which this lab has now hit twice:
   but they are also looser. If a pattern needs to be exact, test it against the
   device's actual argument list rather than against what the command looks like
   when typed.
+
+## 12. `aaa authorization commands 15` is half a control
+
+On IOS, `aaa authorization commands 15` authorizes **exec** commands. Commands
+typed inside `configure terminal` are governed by a *separate* setting,
+`aaa authorization config-commands` — and its absence from the running config
+means it is **off**, not on by default.
+
+That absence is the problem. A configuration can look like this:
+
+```text
+aaa authorization exec default group TAC-GROUP local if-authenticated
+aaa authorization commands 15 default group TAC-GROUP local if-authenticated
+```
+
+and be enforcing nothing at all once a session reaches `(config)#`. There is no
+line to notice missing, because a disabled feature is represented by silence.
+
+**The authorization log is what settles it.** A service account restricted to a
+short command allowlist — `show`, `configure terminal`, `no ip http server`,
+`write memory` — was used to type three commands that should all have been
+refused:
+
+```text
+15:18:47  svc-ansible-rw  deploy  permit  shell
+15:18:56  svc-ansible-rw  deploy  permit  shell  configure terminal <cr>
+```
+
+Two entries. `interface GigabitEthernet0/8`, `ip http server` and
+`username ansibletest privilege 1 secret 0 …` were accepted by the switch and
+**never sent to the server**. The account created a local user it had no
+permission to create. It also reconfigured the AAA subsystem — closing the hole
+with the very privilege the hole granted it.
+
+After adding `aaa authorization config-commands`, the same session:
+
+```text
+deploy  permit  configure terminal <cr>
+deploy  permit  show running-config <cr>
+deploy  deny    clear counters <cr>
+deploy  deny    interface GigabitEthernet 0 8 <cr>
+deploy  permit  write memory <cr>
+```
+
+Both modes enforced, permits and denials against one identity.
+
+**Per vendor.** IOS 12.1(22)EA13 offers `config-commands` too, so the 2003
+switch needs the same line and gets no exception. Arista EOS's
+`aaa authorization commands all default` *does* cover configuration mode —
+`% Authorization denied for command 'interface Ethernet1'` — but that was
+verified by test, not assumed, after IOS had already disproved one assumption.
+Junos does not use per-command TACACS+ at all; its equivalent is a login
+class's `allow-configuration-regexps`.
+
+Two things worth taking away:
+
+- **Read the authorization log, not the running config.** The log says what the
+  device *asks*. The running config only says what someone typed.
+- **`interface GigabitEthernet 0 8`** is how IOS sent that command — the slash
+  is a separate argument. Any pattern matching an interface name has to know
+  that, and the only way to know it is to look at a real request.
